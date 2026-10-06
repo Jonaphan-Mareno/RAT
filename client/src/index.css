@@ -2,7 +2,157 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+@layer base {
+  body {
+    margin: 0;
+    font-family: 'Outfit', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: #F0C020;
+    color: #121212;
+  }
+}
+
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold uppercase tracking-wider
+           border-2 border-bau-ink dark:border-bau-ink-light
+           transition-all duration-200 ease-out cursor-pointer
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bau-ink focus-visible:ring-offset-2
+           dark:focus-visible:ring-bau-ink-light
+           active:translate-x-[2px] active:translate-y-[2px] active:shadow-none;
+  }
+  .btn-blue {
+    @apply btn bg-bau-blue text-white shadow-hard-sm dark:shadow-hard-sm-light
+           hover:-translate-y-0.5 hover:shadow-hard dark:hover:shadow-hard-light;
+  }
+  .btn-red {
+    @apply btn bg-bau-red text-white shadow-hard-sm dark:shadow-hard-sm-light
+           hover:-translate-y-0.5 hover:shadow-hard dark:hover:shadow-hard-light;
+  }
+  .btn-yellow {
+    @apply btn bg-bau-yellow text-bau-ink shadow-hard-sm
+           hover:-translate-y-0.5 hover:shadow-hard;
+  }
+  .btn-outline {
+    @apply btn bg-transparent text-bau-ink dark:text-bau-ink-light shadow-hard-sm dark:shadow-hard-sm-light
+           hover:bg-bau-ink hover:text-white dark:hover:bg-bau-ink-light dark:hover:text-bau-ink;
+  }
+  .btn-ghost {
+    @apply btn border-transparent shadow-none
+           text-bau-ink dark:text-bau-ink-light
+           hover:border-bau-ink dark:hover:border-bau-ink-light;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* Card */
+  .card {
+    @apply bg-bau-surface dark:bg-bau-surface-dark
+           border-2 border-bau-ink dark:border-bau-ink-light
+           shadow-hard dark:shadow-hard-light
+           transition-all duration-200;
+  }
+  .card-hover {
+    @apply hover:-translate-y-1 hover:shadow-hard-lg dark:hover:shadow-hard-lg-light cursor-pointer;
+  }
+
+  /* Panel */
+  .panel {
+    @apply bg-bau-surface dark:bg-bau-surface-dark
+           border-4 border-bau-ink dark:border-bau-ink-light
+           shadow-hard-lg dark:shadow-hard-lg-light p-6;
+  }
+
+  /* Input */
+  .input {
+    @apply w-full px-4 py-2.5 text-sm font-medium
+           bg-bau-surface dark:bg-bau-surface-dark
+           border-2 border-bau-ink dark:border-bau-ink-light
+           text-bau-ink dark:text-bau-ink-light
+           placeholder:text-bau-ink/40 dark:placeholder:text-bau-ink-light/40
+           focus:outline-none focus:ring-2 focus:ring-bau-yellow focus:ring-offset-2
+           transition-all duration-200;
+  }
+
+  /* Tag */
+  .tag {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold uppercase tracking-wider
+           border-2 border-bau-ink dark:border-bau-ink-light;
+  }
+
+  /* Stat value */
+  .stat-value {
+    @apply text-4xl font-black font-mono tabular-nums leading-tight;
+  }
+
+  /* Table */
+  .table-bauhaus {
+    @apply w-full text-sm;
+  }
+  .table-bauhaus thead {
+    @apply border-b-4 border-bau-ink dark:border-bau-ink-light;
+  }
+  .table-bauhaus th {
+    @apply px-3 py-3 text-left text-xs font-bold uppercase tracking-widest
+           text-bau-ink dark:text-bau-ink-light cursor-pointer select-none;
+  }
+  .table-bauhaus tbody tr {
+    @apply border-b border-bau-muted dark:border-bau-muted-dark;
+  }
+  .table-bauhaus tbody tr:nth-child(even) {
+    @apply bg-bau-canvas/50 dark:bg-bau-muted-dark/30;
+  }
+  .table-bauhaus tbody tr:hover {
+    @apply bg-bau-yellow/10;
+  }
+  .table-bauhaus td {
+    @apply px-3 py-2.5 text-bau-ink dark:text-bau-ink-light;
+  }
+
+  /* Dot grid pattern */
+  .dot-grid {
+    background-image: radial-gradient(#12121222 1.5px, transparent 1.5px);
+    background-size: 20px 20px;
+  }
+  .dark .dot-grid {
+    background-image: radial-gradient(#F0F0F022 1.5px, transparent 1.5px);
+  }
+
+  /* Geometric shapes */
+  .geo-circle {
+    @apply w-3 h-3 rounded-full border-2 border-bau-ink dark:border-bau-ink-light;
+  }
+  .geo-square {
+    @apply w-3 h-3 border-2 border-bau-ink dark:border-bau-ink-light;
+  }
+  .geo-triangle {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 12px solid currentColor;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

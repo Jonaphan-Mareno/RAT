@@ -125,12 +125,29 @@ export function buildMetricSnapshot(repoId, commits, resolveAuthor) {
       resolveAuthor(commit.author_name, commit.author_email),
     ])
   );
-  const sql = `
-    SELECT fc.commit_id, fc.file_path, fc.renamed_from, fc.added_lines, fc.removed_lines
-    FROM file_changes fc
-    WHERE fc.commit_id IN (${commitIds.join(',')})
-    ORDER BY fc.commit_id, fc.id
-  `;
+
+  // Use temp table for large commit sets to avoid huge IN(...) clauses (H3)
+  const db = getDb();
+  const useTempTable = commitIds.length > 500;
+  if (useTempTable) {
+    db.exec('CREATE TEMP TABLE IF NOT EXISTS _tmp_commit_ids (id INTEGER PRIMARY KEY)');
+    db.exec('DELETE FROM _tmp_commit_ids');
+    const insertTmp = db.prepare('INSERT OR IGNORE INTO _tmp_commit_ids (id) VALUES (?)');
+    const batchInsert = db.transaction((ids) => {
+      for (const id of ids) insertTmp.run(id);
+    });
+    batchInsert(commitIds);
+  }
+
+  const sql = useTempTable
+    ? `SELECT fc.commit_id, fc.file_path, fc.renamed_from, fc.added_lines, fc.removed_lines
+       FROM file_changes fc
+       INNER JOIN _tmp_commit_ids t ON fc.commit_id = t.id
+       ORDER BY fc.commit_id, fc.id`
+    : `SELECT fc.commit_id, fc.file_path, fc.renamed_from, fc.added_lines, fc.removed_lines
+       FROM file_changes fc
+       WHERE fc.commit_id IN (${commitIds.join(',')})
+       ORDER BY fc.commit_id, fc.id`;
 
   let currentCommitId = null;
   let touchedMetrics = new Set();
@@ -140,7 +157,7 @@ export function buildMetricSnapshot(repoId, commits, resolveAuthor) {
     touchedMetrics = new Set();
   };
 
-  for (const row of getDb().prepare(sql).iterate()) {
+  for (const row of db.prepare(sql).iterate()) {
     const commitId = Number(row.commit_id);
     if (currentCommitId !== null && commitId !== currentCommitId) finishCommit();
     currentCommitId = commitId;
@@ -190,6 +207,11 @@ export function buildMetricSnapshot(repoId, commits, resolveAuthor) {
     }
   }
   if (currentCommitId !== null) finishCommit();
+
+  // Clean up temp table
+  if (useTempTable) {
+    db.exec('DELETE FROM _tmp_commit_ids');
+  }
 
   return {
     H_size: HSize,
