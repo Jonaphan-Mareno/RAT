@@ -1,0 +1,11 @@
+node_modules/
+dist/
+server/data/repos/
+server/data/*.db
+*.db
+.env
+uploads/
+.npm-cache/
+client/node_modules/
+server/node_modules/
+server/data/
