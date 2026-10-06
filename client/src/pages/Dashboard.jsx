@@ -9,19 +9,22 @@ export default function Dashboard() {
   const [tab, setTab] = useState('clone');
   const [cloneUrl, setCloneUrl] = useState('');
   const [repoName, setRepoName] = useState('');
+  const [reference, setReference] = useState('');
   const [loading, setLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   const handleClone = async (e) => {
     e.preventDefault();
     if (!cloneUrl) return toast.error('Enter a repository URL');
     setLoading(true);
     try {
-      const result = await api.cloneRepo(cloneUrl, repoName || undefined);
+      const result = await api.cloneRepo(cloneUrl, repoName || undefined, reference || undefined);
       toast.success('Repository cloning started!');
       loadRepos();
       navigate(`/repos/${result.id}`);
       setCloneUrl('');
       setRepoName('');
+      setReference('');
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -29,12 +32,16 @@ export default function Dashboard() {
     }
   };
 
-  const handleUpload = async (e) => {
-    const file = e.target.files[0];
+  const uploadFile = async (file) => {
     if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      toast.error('Select a .zip file');
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await api.uploadZip(file, repoName || file.name.replace('.zip', ''));
+      const result = await api.uploadZip(file, repoName || file.name.replace(/\.zip$/i, ''), reference || undefined);
       toast.success('Repository uploaded! Processing...');
       loadRepos();
       navigate(`/repos/${result.id}`);
@@ -42,8 +49,19 @@ export default function Dashboard() {
       toast.error(err.message);
     } finally {
       setLoading(false);
-      e.target.value = '';
     }
+  };
+
+  const handleUpload = (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    uploadFile(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (!loading) uploadFile(e.dataTransfer.files[0]);
   };
 
   return (
@@ -96,6 +114,13 @@ export default function Dashboard() {
               placeholder="Repository name (optional)"
               className="w-full px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
             />
+            <input
+              type="text"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="Reference commit, tag, or branch (defaults to HEAD)"
+              className="w-full px-4 py-2 border rounded-lg font-mono text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
             <button
               type="submit"
               disabled={loading}
@@ -115,12 +140,32 @@ export default function Dashboard() {
               placeholder="Repository name (optional)"
               className="w-full px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
             />
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-              <div className="text-center">
+            <input
+              type="text"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="Reference commit, tag, or branch (defaults to HEAD)"
+              className="w-full px-4 py-2 border rounded-lg font-mono text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+            <label
+              onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragOver={(e) => e.preventDefault()}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={handleDrop}
+              className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                dragActive
+                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950'
+                  : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              <div className="text-center px-4">
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {loading ? 'Uploading...' : 'Click to upload .zip file'}
+                  {loading ? 'Uploading...' : 'Drop a .zip file here or click to browse'}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">Must contain .git directory</p>
+                <p className="text-xs text-gray-400 mt-1">The archive must include its .git directory.</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  GitHub Download ZIP files omit history; use Clone URL for those.
+                </p>
               </div>
               <input
                 type="file"

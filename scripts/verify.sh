@@ -2,7 +2,7 @@
 # RAT Verification Script - tests all fixtures against expected values
 set -e
 
-BASE="http://localhost:3001/api"
+BASE="${BASE:-http://localhost:3001/api}"
 PASS=0
 FAIL=0
 TOTAL=0
@@ -81,8 +81,8 @@ check "H={C1,C2} A.txt removed" "1" "$CS_REM"
 check "H={C1,C2} A.txt growth" "4" "$CS_GRO"
 check "H={C1,C2} A.txt churn" "6" "$CS_CHU"
 check "H={C1,C2} A.txt modifications" "2" "$CS_MOD"
-check "H={C1,C2} A.txt eta" "1.0" "$CS_ETA"
-check "H={C1,C2} A.txt rho" "3.0" "$CS_RHO"
+check "H={C1,C2} A.txt eta" "1" "$CS_ETA"
+check "H={C1,C2} A.txt rho" "3" "$CS_RHO"
 
 echo ""
 echo "--- FIXTURE E (id=6): Time window filters ---"

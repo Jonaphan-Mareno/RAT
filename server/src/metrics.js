@@ -1,4 +1,5 @@
 import { getDb } from './db.js';
+import { buildMetricSnapshot } from './metricSnapshot.js';
 
 /**
  * Build the author resolution lookup for a repo.
@@ -160,143 +161,49 @@ function aggregateFromFiles(rows, dirPath) {
  * Commit Set Metrics: aggregate over filtered commit set H for an object.
  * l+(H,o), l-(H,o), delta(H,o), churn(H,o), n(H,o), eta(H,o), rho(H,o)
  */
-export function getCommitSetMetrics(repoId, filters = {}, objectPath = null) {
-  const db = getDb();
+export function getMetricSnapshot(repoId, filters = {}) {
   const commits = getFilteredCommitIds(repoId, filters);
-  const commitIds = commits.map(c => c.id);
-  const H_size = commitIds.length;
+  return buildMetricSnapshot(repoId, commits, buildAuthorResolver(repoId));
+}
 
-  if (H_size === 0) {
-    return { objects: [], H_size: 0 };
-  }
-
-  // Build query based on whether we have a path filter
-  let sql;
-  let params;
+export function getCommitSetMetrics(repoId, filters = {}, objectPath = null) {
+  const snapshot = getMetricSnapshot(repoId, filters);
+  let files = snapshot.files;
+  let directories = snapshot.directories;
 
   if (objectPath !== null && objectPath !== '' && objectPath !== '/') {
-    // Specific file or directory
-    const isDir = !objectPath.includes('.') || objectPath.endsWith('/');
-    if (isDir) {
-      const dirPrefix = objectPath.replace(/\/$/, '') + '/';
-      sql = `
-        SELECT fc.file_path,
-               SUM(fc.added_lines) as total_added,
-               SUM(fc.removed_lines) as total_removed,
-               COUNT(DISTINCT CASE WHEN (fc.added_lines + fc.removed_lines) > 0 THEN fc.commit_id END) as modifications
-        FROM file_changes fc
-        WHERE fc.commit_id IN (${commitIds.join(',')})
-          AND (fc.file_path LIKE ? OR fc.file_path = ?)
-        GROUP BY fc.file_path
-      `;
-      params = [dirPrefix + '%', objectPath.replace(/\/$/, '')];
+    const normalizedPath = objectPath.replace(/\/$/, '');
+    const exactFile = files.find(file => file.path === normalizedPath);
+    if (exactFile) {
+      files = [exactFile];
+      directories = [];
     } else {
-      sql = `
-        SELECT fc.file_path,
-               SUM(fc.added_lines) as total_added,
-               SUM(fc.removed_lines) as total_removed,
-               COUNT(DISTINCT CASE WHEN (fc.added_lines + fc.removed_lines) > 0 THEN fc.commit_id END) as modifications
-        FROM file_changes fc
-        WHERE fc.commit_id IN (${commitIds.join(',')})
-          AND fc.file_path = ?
-        GROUP BY fc.file_path
-      `;
-      params = [objectPath];
+      const prefix = `${normalizedPath}/`;
+      files = files.filter(file => file.path.startsWith(prefix));
+      directories = directories.filter(directory =>
+        directory.path === normalizedPath || directory.path.startsWith(prefix)
+      );
     }
-  } else {
-    // All objects
-    sql = `
-      SELECT fc.file_path,
-             SUM(fc.added_lines) as total_added,
-             SUM(fc.removed_lines) as total_removed,
-             COUNT(DISTINCT CASE WHEN (fc.added_lines + fc.removed_lines) > 0 THEN fc.commit_id END) as modifications
-      FROM file_changes fc
-      WHERE fc.commit_id IN (${commitIds.join(',')})
-      GROUP BY fc.file_path
-    `;
-    params = [];
   }
 
-  const rows = db.prepare(sql).all(...params);
-
-  const objects = rows.map(row => ({
-    path: row.file_path,
-    added: row.total_added,
-    removed: row.total_removed,
-    growth: row.total_added - row.total_removed,
-    churn: row.total_added + row.total_removed,
-    modifications: row.modifications,
-    modificationFreq: H_size > 0 ? row.modifications / H_size : 0,
-    churnRate: H_size > 0 ? (row.total_added + row.total_removed) / H_size : 0,
-  }));
-
-  // Also compute directory aggregates
-  const dirMetrics = computeDirectoryAggregates(objects, H_size);
-
   return {
-    files: objects,
-    directories: dirMetrics,
-    H_size,
+    files: files.map(({ authors, ...metric }) => metric),
+    directories: directories.map(({ authors, ...metric }) => metric),
+    H_size: snapshot.H_size,
   };
 }
 
 /**
- * Compute directory-level aggregates from file-level metrics.
- * Bottom-up: each directory sums its immediate children (files and subdirs).
- */
-function computeDirectoryAggregates(fileObjects, H_size) {
-  const dirMap = new Map(); // dirPath -> { added, removed, churn, modifications_set }
-
-  // Collect all unique directories
-  for (const obj of fileObjects) {
-    const parts = obj.path.split('/');
-    // Add all parent directories
-    for (let i = 0; i < parts.length; i++) {
-      const dir = i === 0 ? '' : parts.slice(0, i).join('/');
-      if (!dirMap.has(dir)) {
-        dirMap.set(dir, { added: 0, removed: 0, churn: 0, modifications: 0, commitIds: new Set() });
-      }
-    }
-  }
-
-  // For each file, add its metrics to its direct parent dir and all ancestors
-  for (const obj of fileObjects) {
-    const parts = obj.path.split('/');
-    for (let i = 0; i < parts.length; i++) {
-      const dir = i === 0 ? '' : parts.slice(0, i).join('/');
-      if (dirMap.has(dir)) {
-        const d = dirMap.get(dir);
-        d.added += obj.added;
-        d.removed += obj.removed;
-        d.churn += obj.churn;
-        d.modifications += obj.modifications;
-      }
-    }
-  }
-
-  return Array.from(dirMap.entries()).map(([dirPath, m]) => ({
-    path: dirPath || '/',
-    added: m.added,
-    removed: m.removed,
-    growth: m.added - m.removed,
-    churn: m.churn,
-    modifications: m.modifications,
-    modificationFreq: H_size > 0 ? m.modifications / H_size : 0,
-    churnRate: H_size > 0 ? m.churn / H_size : 0,
-  }));
-}
-
-/**
- * Repository metrics = root directory metrics over the commit set.
+ * Repository metrics = all non-binary file changes over the commit set.
  */
 export function getRepositoryMetrics(repoId, filters = {}) {
-  const result = getCommitSetMetrics(repoId, filters);
-  const rootDir = result.directories?.find(d => d.path === '/');
+  const snapshot = getMetricSnapshot(repoId, filters);
+  const { authors, ...repository } = snapshot.repository;
   return {
-    ...rootDir,
-    H_size: result.H_size,
-    fileCount: result.files?.length || 0,
-    dirCount: result.directories?.length || 0,
+    ...repository,
+    H_size: snapshot.H_size,
+    fileCount: snapshot.files.length,
+    dirCount: snapshot.directories.length,
   };
 }
 
@@ -304,86 +211,39 @@ export function getRepositoryMetrics(repoId, filters = {}) {
  * Author metrics: n(H,o,a), lambda(H,o,a), omega(H,o,a) for all authors.
  */
 export function getAuthorMetrics(repoId, filters = {}) {
-  const db = getDb();
-  const commits = getFilteredCommitIds(repoId, filters);
-  const H_size = commits.length;
-
-  if (H_size === 0) return { authors: [], H_size: 0 };
-
-  const resolver = buildAuthorResolver(repoId);
-
-  // Group commits by resolved author
-  const authorCommits = new Map(); // canonical author key -> [commitIds]
-  for (const commit of commits) {
-    const resolved = resolver(commit.author_name, commit.author_email);
-    const key = `${resolved.name}|${resolved.email}`;
-    if (!authorCommits.has(key)) {
-      authorCommits.set(key, { name: resolved.name, email: resolved.email, commitIds: [] });
-    }
-    authorCommits.get(key).commitIds.push(commit.id);
-  }
-
-  // For each author, compute per-object metrics
-  const allCommitIds = commits.map(c => c.id);
-  const authorResults = [];
-
-  // Get total churn per file across all commits in H (for ownership denominator)
-  const totalChurnSql = `
-    SELECT fc.file_path, SUM(fc.added_lines + fc.removed_lines) as total_churn
-    FROM file_changes fc
-    WHERE fc.commit_id IN (${allCommitIds.join(',')})
-    GROUP BY fc.file_path
-  `;
-  const totalChurnRows = db.prepare(totalChurnSql).all();
-  const totalChurnMap = new Map();
-  for (const r of totalChurnRows) {
-    totalChurnMap.set(r.file_path, r.total_churn);
-  }
-
-  for (const [, authorData] of authorCommits) {
-    const ids = authorData.commitIds;
-    if (ids.length === 0) continue;
-
-    const sql = `
-      SELECT fc.file_path,
-             SUM(fc.added_lines + fc.removed_lines) as author_churn,
-             COUNT(DISTINCT CASE WHEN (fc.added_lines + fc.removed_lines) > 0 THEN fc.commit_id END) as author_modifications
-      FROM file_changes fc
-      WHERE fc.commit_id IN (${ids.join(',')})
-      GROUP BY fc.file_path
-    `;
-    const rows = db.prepare(sql).all();
-
-    const fileMetrics = rows.map(r => {
-      const totalChurn = totalChurnMap.get(r.file_path) || 0;
-      return {
-        path: r.file_path,
-        authorChurn: r.author_churn,
-        authorModifications: r.author_modifications,
-        ownership: totalChurn > 0 ? r.author_churn / totalChurn : 0,
-      };
+  const snapshot = getMetricSnapshot(repoId, filters);
+  const authors = snapshot.repository.authors.map(authorMetric => {
+    const key = `${authorMetric.name}\u0000${authorMetric.email}`;
+    const commitCount = snapshot.authorCommitCounts.get(key)?.commitCount || 0;
+    const files = snapshot.files.flatMap(file => {
+      const metric = file.authors.find(author => author.name === authorMetric.name && author.email === authorMetric.email);
+      if (!metric) return [];
+      return [{
+        path: file.path,
+        added: metric.added,
+        removed: metric.removed,
+        growth: metric.growth,
+        authorChurn: metric.churn,
+        authorModifications: metric.modifications,
+        ownership: metric.ownership,
+      }];
     });
 
-    // Aggregate total for this author
-    const totalAuthorChurn = fileMetrics.reduce((s, f) => s + f.authorChurn, 0);
-    const totalAuthorMods = fileMetrics.reduce((s, f) => s + f.authorModifications, 0);
-    const totalAllChurn = Array.from(totalChurnMap.values()).reduce((s, v) => s + v, 0);
+    return {
+      name: authorMetric.name,
+      email: authorMetric.email,
+      commitCount,
+      added: authorMetric.added,
+      removed: authorMetric.removed,
+      growth: authorMetric.growth,
+      totalChurn: authorMetric.churn,
+      totalModifications: authorMetric.modifications,
+      overallOwnership: authorMetric.ownership,
+      files: files.slice(0, 100),
+    };
+  });
 
-    authorResults.push({
-      name: authorData.name,
-      email: authorData.email,
-      commitCount: ids.length,
-      totalChurn: totalAuthorChurn,
-      totalModifications: totalAuthorMods,
-      overallOwnership: totalAllChurn > 0 ? totalAuthorChurn / totalAllChurn : 0,
-      files: fileMetrics.slice(0, 100), // Limit for API response size
-    });
-  }
-
-  return {
-    authors: authorResults.sort((a, b) => b.totalChurn - a.totalChurn),
-    H_size,
-  };
+  return { authors, H_size: snapshot.H_size };
 }
 
 /**

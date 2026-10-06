@@ -46,7 +46,7 @@ router.get('/:id', (req, res) => {
 // Clone a repo from URL
 router.post('/clone', async (req, res) => {
   try {
-    const { url, name } = req.body;
+    const { url, name, ref } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
     // Basic URL validation - allow http(s), git@, and local paths
@@ -54,7 +54,7 @@ router.post('/clone', async (req, res) => {
       return res.status(400).json({ error: 'Invalid repository URL' });
     }
 
-    const repoId = await ingestFromUrl(url, name);
+    const repoId = await ingestFromUrl(url, name, ref || 'HEAD');
     res.json({ id: repoId, status: 'ingesting' });
   } catch (error) {
     console.error('Clone error:', error);
@@ -68,7 +68,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const name = req.body.name || req.file.originalname.replace('.zip', '');
-    const repoId = await ingestFromZip(req.file.path, name);
+    const repoId = await ingestFromZip(req.file.path, name, req.body.ref || 'HEAD');
     res.json({ id: repoId, status: 'ingesting' });
   } catch (error) {
     console.error('Upload error:', error);

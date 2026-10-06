@@ -17,14 +17,15 @@ export const api = {
   getRepos: () => request('/repos'),
   getRepo: (id) => request(`/repos/${id}`),
   deleteRepo: (id) => request(`/repos/${id}`, { method: 'DELETE' }),
-  cloneRepo: (url, name) => request('/repos/clone', {
+  cloneRepo: (url, name, ref) => request('/repos/clone', {
     method: 'POST',
-    body: JSON.stringify({ url, name }),
+    body: JSON.stringify({ url, name, ref }),
   }),
-  uploadZip: async (file, name) => {
+  uploadZip: async (file, name, ref) => {
     const form = new FormData();
     form.append('file', file);
     if (name) form.append('name', name);
+    if (ref) form.append('ref', ref);
     const res = await fetch(BASE + '/repos/upload', { method: 'POST', body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));

@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db.js';
 import {
   cloneRepo,
-  getHeadHash,
+  getRefHash,
   isGitRepo,
   countNonMergeCommits,
   parseGitLog,
@@ -45,7 +45,7 @@ function notifyProgress(repoId, data) {
 /**
  * Ingest a repo from a clone URL.
  */
-export async function ingestFromUrl(url, repoName) {
+export async function ingestFromUrl(url, repoName, ref = 'HEAD') {
   const db = getDb();
   const repoDir = path.join(REPOS_DIR, uuidv4());
 
@@ -62,7 +62,7 @@ export async function ingestFromUrl(url, repoName) {
     await cloneRepo(url, repoDir, (pct) => {
       notifyProgress(repoId, { status: 'cloning', pct: Math.floor(pct * 0.3) });
     });
-  });
+  }, ref);
 
   return repoId;
 }
@@ -70,7 +70,7 @@ export async function ingestFromUrl(url, repoName) {
 /**
  * Ingest a repo from an uploaded zip file.
  */
-export async function ingestFromZip(zipPath, repoName) {
+export async function ingestFromZip(zipPath, repoName, ref = 'HEAD') {
   const db = getDb();
   const repoDir = path.join(REPOS_DIR, uuidv4());
 
@@ -86,7 +86,7 @@ export async function ingestFromZip(zipPath, repoName) {
     notifyProgress(repoId, { status: 'extracting', pct: 0 });
     await extractZip(zipPath, repoDir);
     notifyProgress(repoId, { status: 'extracting', pct: 30 });
-  });
+  }, ref);
 
   return repoId;
 }
@@ -118,7 +118,7 @@ async function extractZip(zipPath, destDir) {
   }
 
   if (!gitFound) {
-    throw new Error('Zip does not contain a .git directory — not a valid repository.');
+    throw new Error('Zip does not contain a .git directory. GitHub Download ZIP archives omit commit history; use Clone URL or upload an archive that includes .git.');
   }
 
   // Extract
@@ -156,7 +156,7 @@ async function extractZip(zipPath, destDir) {
   try { fs.unlinkSync(zipPath); } catch {}
 }
 
-async function processIngestion(repoId, repoDir, prepareStep) {
+async function processIngestion(repoId, repoDir, prepareStep, requestedRef = 'HEAD') {
   const db = getDb();
   try {
     await prepareStep();
@@ -165,11 +165,11 @@ async function processIngestion(repoId, repoDir, prepareStep) {
       throw new Error('Not a valid git repository after preparation.');
     }
 
-    const headHash = getHeadHash(repoDir);
-    const totalCommits = countNonMergeCommits(repoDir, headHash);
+    const refHash = getRefHash(repoDir, requestedRef || 'HEAD');
+    const totalCommits = countNonMergeCommits(repoDir, refHash);
 
     db.prepare('UPDATE repositories SET ref_commit = ?, commit_count = ? WHERE id = ?')
-      .run(headHash, totalCommits, repoId);
+      .run(refHash, totalCommits, repoId);
 
     notifyProgress(repoId, { status: 'parsing', pct: 30, totalCommits });
 
@@ -204,7 +204,7 @@ async function processIngestion(repoId, repoDir, prepareStep) {
       batch = [];
     };
 
-    await parseGitLog(repoDir, headHash, (commit) => {
+    await parseGitLog(repoDir, refHash, (commit) => {
       batch.push(commit);
       processed++;
       if (batch.length >= BATCH_SIZE) {
@@ -221,7 +221,7 @@ async function processIngestion(repoId, repoDir, prepareStep) {
     flushBatch();
 
     // Process mailmap
-    const mailmapContent = getMailmap(repoDir);
+    const mailmapContent = getMailmap(repoDir, refHash);
     if (mailmapContent) {
       applyMailmap(repoId, mailmapContent);
     }

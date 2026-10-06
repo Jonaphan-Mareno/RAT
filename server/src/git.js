@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import path from 'path';
 
 /**
@@ -33,10 +33,18 @@ export function cloneRepo(url, destPath, onProgress) {
 }
 
 /**
- * Get HEAD commit hash for a repo.
+ * Resolve a revision to an exact commit hash.
  */
+export function getRefHash(repoPath, ref = 'HEAD') {
+  return execFileSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
+    cwd: repoPath,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
 export function getHeadHash(repoPath) {
-  return execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8' }).trim();
+  return getRefHash(repoPath, 'HEAD');
 }
 
 /**
@@ -44,7 +52,7 @@ export function getHeadHash(repoPath) {
  */
 export function isGitRepo(repoPath) {
   try {
-    execSync('git rev-parse --git-dir', { cwd: repoPath, stdio: 'pipe' });
+    execFileSync('git', ['rev-parse', '--git-dir'], { cwd: repoPath, stdio: 'pipe' });
     return true;
   } catch {
     return false;
@@ -56,9 +64,10 @@ export function isGitRepo(repoPath) {
  */
 export function countNonMergeCommits(repoPath, ref = 'HEAD') {
   try {
-    const count = execSync(`git rev-list --no-merges --count ${ref}`, {
+    const count = execFileSync('git', ['rev-list', '--no-merges', '--count', ref], {
       cwd: repoPath,
       encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
     return parseInt(count, 10);
   } catch {
@@ -76,11 +85,12 @@ export function parseGitLog(repoPath, ref = 'HEAD', onCommit, onProgress) {
     const DELIM = '---COMMIT_BOUNDARY---';
     const proc = spawn('git', [
       '-C', repoPath,
+      '-c', 'core.quotePath=false',
       'log', ref,
       '--no-merges',
       '--numstat',
       '-M50%',
-      `--format=${DELIM}%nHASH:%H%nAUTHOR_NAME:%an%nAUTHOR_EMAIL:%ae%nCOMMITTER_DATE:%cd`,
+      `--format=${DELIM}%nHASH:%H%nAUTHOR_NAME:%aN%nAUTHOR_EMAIL:%aE%nCOMMITTER_DATE:%cd`,
       '--date=iso-strict',
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -154,7 +164,7 @@ function parseCommitBlock(block) {
         let renamedFrom = null;
 
         // Git rename format: "old/path => new/path" or "{old => new}/rest"
-        const renameMatch = filePath.match(/^(.*)?\{(.+?) => (.+?)\}(.*)$/) ||
+        const renameMatch = filePath.match(/^(.*?)\{(.*?) => (.*?)\}(.*)$/) ||
                            filePath.match(/^(.+?) => (.+)$/);
         if (renameMatch) {
           if (renameMatch.length === 5) {
@@ -198,12 +208,12 @@ function parseCommitBlock(block) {
 /**
  * Check if .mailmap exists in a repo and return its content.
  */
-export function getMailmap(repoPath) {
+export function getMailmap(repoPath, ref = 'HEAD') {
   try {
-    const content = execSync('git cat-file -p HEAD:.mailmap', {
+    const content = execFileSync('git', ['cat-file', '-p', `${ref}:.mailmap`], {
       cwd: repoPath,
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     return content;
   } catch {
