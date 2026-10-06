@@ -93,7 +93,7 @@ function FilterPanel({ repoId, filters, setFilters, authors, hSize }) {
         </h3>
         {hSize !== undefined && (
           <span className="tag bg-bau-yellow/10 text-bau-ink dark:text-bau-ink-light border-bau-yellow">
-            Filtered: |H| = <span className="font-mono font-bold ml-1">{hSize}</span>
+            <span className="font-mono font-bold">{hSize?.toLocaleString()}</span> commits matched
           </span>
         )}
       </div>
