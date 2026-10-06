@@ -49,8 +49,8 @@ router.post('/clone', async (req, res) => {
     const { url, name } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
-    // Basic URL validation
-    if (!url.match(/^https?:\/\/.+/) && !url.match(/^git@.+/)) {
+    // Basic URL validation - allow http(s), git@, and local paths
+    if (!url.match(/^https?:\/\/.+/) && !url.match(/^git@.+/) && !url.startsWith('/')) {
       return res.status(400).json({ error: 'Invalid repository URL' });
     }
 
